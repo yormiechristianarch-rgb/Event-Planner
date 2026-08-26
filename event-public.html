@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Event Details — MY EVENT PLANNER</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+</head>
+<body>
+<div class="public-page">
+  <!-- Nav -->
+  <nav class="public-nav">
+    <div class="public-nav-brand"><span style="font-size:1.4rem">🎉</span> MY EVENT PLANNER</div>
+    <a href="login.html" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,0.3)">Sign In</a>
+  </nav>
+
+  <!-- Loading -->
+  <div id="page-loader" style="display:flex;align-items:center;justify-content:center;min-height:60vh">
+    <div style="text-align:center"><div class="spinner" style="margin:0 auto 12px"></div><p style="color:var(--text-muted)">Loading event…</p></div>
+  </div>
+
+  <div id="event-page-content" style="display:none"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="js/utils.js"></script>
+<script>
+  window.onAuthReady = () => {};
+
+  const params = new URLSearchParams(location.search);
+  const eventId = params.get('id');
+
+  async function loadPublicEvent() {
+    if (!eventId) { showError('No event ID provided.'); return; }
+    try {
+      const doc = await db.collection(COLLECTIONS.EVENTS).doc(eventId).get();
+      if (!doc.exists) { showError('Event not found.'); return; }
+      const e = { id: doc.id, ...doc.data() };
+      document.title = `${e.eventName || 'Event'} — MY EVENT PLANNER`;
+      renderEventPage(e);
+    } catch(err){ showError(err.message); }
+  }
+
+  function showError(msg) {
+    document.getElementById('page-loader').style.display = 'none';
+    document.getElementById('event-page-content').style.display = 'block';
+    document.getElementById('event-page-content').innerHTML = `<div class="public-section" style="text-align:center;padding:80px 20px"><div style="font-size:3rem;margin-bottom:16px">😕</div><h2>Oops!</h2><p style="color:var(--text-muted)">${escHtml(msg)}</p><a href="index.html" class="btn btn-primary mt-3">Go to Dashboard</a></div>`;
+  }
+
+  function renderEventPage(e) {
+    document.getElementById('page-loader').style.display = 'none';
+    const content = document.getElementById('event-page-content');
+    content.style.display = 'block';
+    const color = e.eventColor || '#6C63FF';
+
+    // Countdown
+    let countdownHtml = '';
+    if (e.eventDate) {
+      const eventDt = new Date(e.eventDate + (e.startTime ? 'T'+e.startTime : 'T00:00:00'));
+      const diff = eventDt - Date.now();
+      if (diff > 0) {
+        const days  = Math.floor(diff / 86400000);
+        const hours = Math.floor((diff % 86400000) / 3600000);
+        const mins  = Math.floor((diff % 3600000) / 60000);
+        const secs  = Math.floor((diff % 60000) / 1000);
+        countdownHtml = `
+          <div class="event-hero-countdown" id="countdown-wrap">
+            <div class="countdown-box"><div class="countdown-num" id="cd-days">${days}</div><div class="countdown-label">Days</div></div>
+            <div class="countdown-box"><div class="countdown-num" id="cd-hours">${String(hours).padStart(2,'0')}</div><div class="countdown-label">Hours</div></div>
+            <div class="countdown-box"><div class="countdown-num" id="cd-mins">${String(mins).padStart(2,'0')}</div><div class="countdown-label">Minutes</div></div>
+            <div class="countdown-box"><div class="countdown-num" id="cd-secs">${String(secs).padStart(2,'0')}</div><div class="countdown-label">Seconds</div></div>
+          </div>
+        `;
+        // Live countdown
+        setInterval(() => {
+          const d2 = eventDt - Date.now();
+          if (d2 <= 0) { document.getElementById('countdown-wrap')?.replaceWith(Object.assign(document.createElement('div'),{textContent:'🎉 This event is happening now!',className:'event-hero-countdown'})); return; }
+          const d_=Math.floor(d2/86400000), h_=Math.floor((d2%86400000)/3600000), m_=Math.floor((d2%3600000)/60000), s_=Math.floor((d2%60000)/1000);
+          const cd=document.getElementById('cd-days'); if(cd) cd.textContent=d_;
+          const ch=document.getElementById('cd-hours'); if(ch) ch.textContent=String(h_).padStart(2,'0');
+          const cm=document.getElementById('cd-mins'); if(cm) cm.textContent=String(m_).padStart(2,'0');
+          const cs=document.getElementById('cd-secs'); if(cs) cs.textContent=String(s_).padStart(2,'0');
+        }, 1000);
+      } else {
+        countdownHtml = '<div class="event-hero-countdown"><div class="countdown-box" style="min-width:140px"><div class="countdown-num" style="font-size:1.1rem">🎉 Event Completed</div></div></div>';
+      }
+    }
+
+    content.innerHTML = `
+      <!-- Hero -->
+      <div class="event-hero">
+        ${e.bannerURL ? `<img src="${e.bannerURL}" alt="${escHtml(e.eventName||'')}"/>` : ''}
+        <div class="event-hero-content">
+          <div style="margin-bottom:10px"><span style="background:rgba(255,255,255,0.2);backdrop-filter:blur(8px);padding:5px 14px;border-radius:99px;font-size:0.83rem;font-weight:600">${escHtml(e.eventType||'Event')}</span></div>
+          <h1 class="event-hero-title">${escHtml(e.eventName||'')}</h1>
+          <p class="event-hero-meta">${e.eventDate?formatDate(e.eventDate,'long'):''} ${e.startTime?'· '+e.startTime:''}</p>
+          ${countdownHtml}
+        </div>
+        <div style="position:absolute;bottom:0;left:0;right:0;height:4px;background:${color}"></div>
+      </div>
+
+      <!-- Details -->
+      <div class="public-section">
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:40px;align-items:start" class="event-pub-grid">
+          <!-- Left -->
+          <div>
+            <div class="card mb-4">
+              <div class="card-header"><div class="card-title">Event Details</div></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:0.9rem">
+                <div><div class="text-xs text-muted mb-2">Date</div><div class="font-semi">${e.eventDate?formatDate(e.eventDate,'long'):'TBD'}</div></div>
+                <div><div class="text-xs text-muted mb-2">Time</div><div class="font-semi">${e.startTime||'TBD'} ${e.endTime?'– '+e.endTime:''}</div></div>
+                <div><div class="text-xs text-muted mb-2">Venue</div><div class="font-semi">${escHtml(e.venue||'TBD')}</div></div>
+                <div><div class="text-xs text-muted mb-2">Expected Guests</div><div class="font-semi">${e.expectedGuests||'TBD'}</div></div>
+                ${e.eventTheme?`<div><div class="text-xs text-muted mb-2">Theme</div><div class="font-semi">${escHtml(e.eventTheme)}</div></div>`:''}
+              </div>
+              ${e.address?`<div class="divider"></div><div style="display:flex;align-items:flex-start;gap:10px;font-size:0.9rem"><i class="fas fa-location-dot" style="color:${color};margin-top:2px"></i><div>${escHtml(e.address)}</div></div>`:''}
+            </div>
+
+            ${e.description?`<div class="card mb-4"><div class="card-header"><div class="card-title">About this Event</div></div><p style="font-size:0.9rem;color:var(--text);line-height:1.8">${escHtml(e.description)}</p></div>`:''}
+
+            <!-- Schedule -->
+            <div id="schedule-section"></div>
+          </div>
+
+          <!-- Right -->
+          <div>
+            <!-- RSVP card -->
+            <div class="card mb-4" style="border-top:4px solid ${color}">
+              <div class="card-header"><div class="card-title">RSVP</div></div>
+              <p style="font-size:0.875rem;color:var(--text-muted);margin-bottom:16px">Will you be attending this event?</p>
+              <a href="rsvp-public.html?event=${e.id}" class="btn btn-primary btn-block btn-lg"><i class="fas fa-envelope-open-text"></i> RSVP Now</a>
+            </div>
+
+            <!-- Organizer -->
+            <div class="card">
+              <div class="card-header"><div class="card-title">Organizer</div></div>
+              <div style="font-size:0.9rem">
+                <div style="font-weight:600;margin-bottom:6px">${escHtml(e.organizer||'—')}</div>
+                ${e.clientName?`<div style="color:var(--text-muted);font-size:0.83rem">Client: ${escHtml(e.clientName)}</div>`:''}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Load timeline as schedule
+    loadEventSchedule(e.id, color);
+
+    // Responsive layout handled by CSS .event-pub-grid
+  }
+
+  async function loadEventSchedule(eventId, color) {
+    try {
+      const snap = await db.collection(COLLECTIONS.TIMELINE).where('eventId','==',eventId).orderBy('order').get();
+      const el = document.getElementById('schedule-section');
+      if (!el || snap.empty) return;
+      const items = snap.docs.map(d => d.data());
+      el.innerHTML = `<div class="card"><div class="card-header"><div class="card-title">Schedule</div></div>
+        <div class="timeline">
+          ${items.map(t=>`<div class="timeline-item"><div class="timeline-dot ${t.completed?'completed':''}"></div><div class="timeline-content"><div class="timeline-title">${escHtml(t.title||'')}</div>${t.date?`<div class="timeline-date">${formatDate(t.date,'short')}</div>`:''} ${t.description?`<div class="timeline-desc">${escHtml(t.description)}</div>`:''}</div></div>`).join('')}
+        </div>
+      </div>`;
+    } catch(e){}
+  }
+
+  loadPublicEvent();
+</script>
+</body>
+</html>

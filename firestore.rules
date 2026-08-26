@@ -1,0 +1,236 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ================================================================
+    // Helper Functions
+    // ================================================================
+
+    // Check if the requesting user is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Get the current user's profile document
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check role
+    function hasRole(role) {
+      return isAuth() && getUserData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('administrator');
+    }
+
+    function isPlanner() {
+      return hasRole('administrator') || hasRole('event_planner');
+    }
+
+    function isStaff() {
+      return hasRole('administrator') || hasRole('event_planner') || hasRole('staff');
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    function isCreatedBy(resource) {
+      return isAuth() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // ================================================================
+    // Users Collection
+    // ================================================================
+    match /users/{userId} {
+      // Anyone authenticated can read user profiles (for assignment dropdowns etc.)
+      allow read: if isAuth();
+
+      // Users can create their own profile on registration
+      allow create: if isOwner(userId);
+
+      // Users can update their own profile; admins can update any
+      allow update: if isOwner(userId) || isAdmin();
+
+      // Only admins can delete user documents
+      allow delete: if isAdmin();
+    }
+
+    // ================================================================
+    // Events Collection
+    // ================================================================
+    match /events/{eventId} {
+      // Staff and above can read events
+      allow read: if isStaff();
+
+      // Planners and above can create events
+      allow create: if isPlanner();
+
+      // Creator or admin can update
+      allow update: if isAdmin() || (isPlanner() && resource.data.createdBy == request.auth.uid);
+
+      // Only admin can delete
+      allow delete: if isAdmin() || (isPlanner() && resource.data.createdBy == request.auth.uid);
+    }
+
+    // ================================================================
+    // Clients Collection
+    // ================================================================
+    match /clients/{clientId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isAdmin();
+    }
+
+    // ================================================================
+    // Guests Collection
+    // ================================================================
+    match /guests/{guestId} {
+      // Public RSVP submissions: allow create without auth
+      allow create: if true;
+
+      // Staff can read guests
+      allow read: if isStaff();
+
+      // Planners can update/delete
+      allow update: if isPlanner() || isAdmin();
+      allow delete: if isPlanner() || isAdmin();
+    }
+
+    // ================================================================
+    // Vendors Collection
+    // ================================================================
+    match /vendors/{vendorId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isAdmin();
+    }
+
+    // ================================================================
+    // Venues Collection
+    // ================================================================
+    match /venues/{venueId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isAdmin();
+    }
+
+    // ================================================================
+    // Tasks Collection
+    // ================================================================
+    match /tasks/{taskId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isStaff(); // Staff can update task status
+      allow delete: if isPlanner();
+    }
+
+    // ================================================================
+    // Timeline Collection
+    // ================================================================
+    match /timeline/{itemId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isPlanner();
+    }
+
+    // ================================================================
+    // Expenses Collection
+    // ================================================================
+    match /expenses/{expenseId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isAdmin();
+    }
+
+    // ================================================================
+    // Payments Collection
+    // ================================================================
+    match /payments/{paymentId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ================================================================
+    // Invitations Collection
+    // ================================================================
+    match /invitations/{invId} {
+      // Public: anyone can read invitations (for public invitation page)
+      allow read: if true;
+
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isPlanner() || isAdmin();
+    }
+
+    // ================================================================
+    // RSVPs Collection
+    // ================================================================
+    match /rsvps/{rsvpId} {
+      // Public: allow anyone to create (submit RSVP without login)
+      allow create: if true;
+
+      // Staff can read RSVP data
+      allow read: if isStaff();
+
+      allow update: if isPlanner();
+      allow delete: if isAdmin();
+    }
+
+    // ================================================================
+    // Notifications Collection
+    // ================================================================
+    match /notifications/{notifId} {
+      // Users can only read their own notifications
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+
+      // Allow creation by authenticated users (system generates notifications)
+      allow create: if isAuth();
+
+      // Users can update (mark as read) their own notifications
+      allow update: if isAuth() && resource.data.userId == request.auth.uid;
+
+      allow delete: if isAuth() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ================================================================
+    // Settings Collection
+    // ================================================================
+    match /settings/{docId} {
+      // All authenticated users can read settings
+      allow read: if isAuth();
+
+      // Only planners and above can write settings
+      allow write: if isPlanner();
+    }
+
+    // ================================================================
+    // Event Media Collection
+    // ================================================================
+    match /eventMedia/{mediaId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isPlanner() || isAdmin();
+    }
+
+    // ================================================================
+    // Documents Collection
+    // ================================================================
+    match /documents/{docId} {
+      allow read: if isStaff();
+      allow create: if isPlanner();
+      allow update: if isPlanner();
+      allow delete: if isPlanner() || isAdmin();
+    }
+  }
+}

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RSVP — MY EVENT PLANNER</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+</head>
+<body>
+<div class="public-page" style="min-height:100vh;background:linear-gradient(135deg,#1E1E2E 0%,#2A2A3E 50%,#1E1E2E 100%);display:flex;flex-direction:column">
+  <nav class="public-nav">
+    <div class="public-nav-brand"><span style="font-size:1.4rem">🎉</span> MY EVENT PLANNER</div>
+  </nav>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:30px 20px">
+    <div style="width:100%;max-width:540px">
+      <!-- Loading -->
+      <div id="rsvp-loader" style="text-align:center;color:#fff">
+        <div class="spinner" style="margin:0 auto 12px;border-color:rgba(255,255,255,0.3);border-top-color:#fff"></div>
+        <p>Loading event…</p>
+      </div>
+      <!-- Content -->
+      <div id="rsvp-content" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="js/utils.js"></script>
+<script>
+  window.onAuthReady = () => {};
+  const params = new URLSearchParams(location.search);
+  const eventId = params.get('event');
+  let rsvpChoice = null;
+
+  async function loadRSVPPage() {
+    if (!eventId) { showRSVPError('No event specified.'); return; }
+    try {
+      const doc = await db.collection(COLLECTIONS.EVENTS).doc(eventId).get();
+      if (!doc.exists) { showRSVPError('Event not found.'); return; }
+      const e = { id: doc.id, ...doc.data() };
+      document.title = `RSVP to ${e.eventName || 'Event'}`;
+      renderRSVPForm(e);
+    } catch(err){ showRSVPError(err.message); }
+  }
+
+  function showRSVPError(msg) {
+    document.getElementById('rsvp-loader').style.display = 'none';
+    document.getElementById('rsvp-content').style.display = 'block';
+    document.getElementById('rsvp-content').innerHTML = `<div class="rsvp-card" style="text-align:center"><div style="font-size:2.5rem;margin-bottom:14px">😕</div><h3>${escHtml(msg)}</h3></div>`;
+  }
+
+  function renderRSVPForm(e) {
+    document.getElementById('rsvp-loader').style.display = 'none';
+    const content = document.getElementById('rsvp-content');
+    content.style.display = 'block';
+    const color = e.eventColor || '#6C63FF';
+    content.innerHTML = `
+      <div class="rsvp-card" id="rsvp-form-card">
+        <div style="text-align:center;margin-bottom:28px">
+          ${e.bannerURL ? `<img src="${e.bannerURL}" alt="${escHtml(e.eventName||'')}" style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius);margin-bottom:18px"/>` : `<div style="font-size:3rem;margin-bottom:12px">🎉</div>`}
+          <h2 style="font-size:1.4rem;font-weight:800;color:var(--dark);margin-bottom:8px">${escHtml(e.eventName||'Event')}</h2>
+          ${e.eventDate?`<p style="font-size:0.9rem;color:var(--text-muted)"><i class="fas fa-calendar" style="color:${color};margin-right:6px"></i>${formatDate(e.eventDate,'long')}</p>`:''}
+          ${e.startTime?`<p style="font-size:0.9rem;color:var(--text-muted)"><i class="fas fa-clock" style="color:${color};margin-right:6px"></i>${e.startTime}${e.endTime?' – '+e.endTime:''}</p>`:''}
+          ${e.venue?`<p style="font-size:0.9rem;color:var(--text-muted)"><i class="fas fa-location-dot" style="color:${color};margin-right:6px"></i>${escHtml(e.venue)}</p>`:''}
+        </div>
+        <h3 style="text-align:center;font-size:1rem;font-weight:700;margin-bottom:18px">Will you attend?</h3>
+        <div class="rsvp-options">
+          <div class="rsvp-option" id="opt-accept" onclick="selectRSVP('accepted')">
+            <div class="rsvp-option-icon">✅</div>
+            <div class="rsvp-option-label">Yes, I'll attend!</div>
+          </div>
+          <div class="rsvp-option decline" id="opt-decline" onclick="selectRSVP('declined')">
+            <div class="rsvp-option-icon">❌</div>
+            <div class="rsvp-option-label">Can't make it</div>
+          </div>
+        </div>
+        <form id="rsvp-form" style="display:none">
+          <div class="form-group"><label>Full Name *</label><input type="text" id="rsvp-name" class="form-control" placeholder="Your full name" required/></div>
+          <div class="form-row">
+            <div class="form-group"><label>Phone</label><input type="tel" id="rsvp-phone" class="form-control" placeholder="+1 555 000 0000"/></div>
+            <div class="form-group"><label>Email</label><input type="email" id="rsvp-email" class="form-control" placeholder="your@email.com"/></div>
+          </div>
+          <div id="accept-only-fields">
+            <div class="form-group"><label>Number of additional guests (besides yourself)</label><input type="number" id="rsvp-additional" class="form-control" value="0" min="0" max="10"/></div>
+            <div class="form-group"><label>Special Requirements</label><input type="text" id="rsvp-special" class="form-control" placeholder="e.g. Vegetarian, Wheelchair access"/></div>
+          </div>
+          <div class="form-group"><label>Message (optional)</label><textarea id="rsvp-message" class="form-control" rows="2" placeholder="Any additional message…"></textarea></div>
+          <button type="button" class="btn btn-primary btn-block btn-lg" id="submit-rsvp-btn" onclick="submitRSVP('${e.id}','${escHtml(e.eventName||'')}')">
+            <i class="fas fa-paper-plane"></i> Submit RSVP
+          </button>
+        </form>
+      </div>
+    `;
+  }
+
+  function selectRSVP(choice) {
+    rsvpChoice = choice;
+    document.getElementById('opt-accept').classList.toggle('selected', choice === 'accepted');
+    document.getElementById('opt-decline').classList.toggle('selected', choice === 'declined');
+    document.getElementById('rsvp-form').style.display = 'block';
+    const acceptFields = document.getElementById('accept-only-fields');
+    if (acceptFields) acceptFields.style.display = choice === 'accepted' ? 'block' : 'none';
+    document.getElementById('submit-rsvp-btn').style.background = choice === 'declined' ? 'var(--danger)' : '';
+  }
+
+  async function submitRSVP(eventId, eventName) {
+    const name = document.getElementById('rsvp-name').value.trim();
+    if (!name) { document.getElementById('rsvp-name').classList.add('is-invalid'); return; }
+    if (!rsvpChoice) { showToast('Please select','Choose Yes or No first.','warning'); return; }
+
+    const btn = document.getElementById('submit-rsvp-btn');
+    btn.classList.add('btn-loading'); btn.disabled = true;
+
+    try {
+      await db.collection(COLLECTIONS.GUESTS).add({
+        name,
+        phone:               document.getElementById('rsvp-phone').value.trim(),
+        email:               document.getElementById('rsvp-email').value.trim(),
+        eventId,
+        eventName,
+        rsvpStatus:          rsvpChoice,
+        rsvpDate:            today(),
+        additionalGuests:    rsvpChoice === 'accepted' ? Number(document.getElementById('rsvp-additional').value)||0 : 0,
+        specialRequirements: rsvpChoice === 'accepted' ? document.getElementById('rsvp-special').value.trim() : '',
+        notes:               document.getElementById('rsvp-message').value.trim(),
+        invitationStatus:    'self_rsvp',
+        createdAt:           firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Also record in RSVPs collection
+      await db.collection(COLLECTIONS.RSVPS).add({
+        guestName: name,
+        eventId, eventName,
+        status: rsvpChoice,
+        date: today(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Success screen
+      document.getElementById('rsvp-form-card').innerHTML = `
+        <div style="text-align:center;padding:20px">
+          <div style="font-size:3.5rem;margin-bottom:16px">${rsvpChoice==='accepted'?'🎉':'😢'}</div>
+          <h2 style="font-size:1.4rem;font-weight:800;margin-bottom:10px">${rsvpChoice==='accepted'?'See you there!':'We\'ll miss you!'}</h2>
+          <p style="color:var(--text-muted);margin-bottom:6px">Hi <strong>${escHtml(name)}</strong>,</p>
+          <p style="color:var(--text-muted);margin-bottom:24px">${rsvpChoice==='accepted'?'Your RSVP has been received. We look forward to seeing you!':'Your response has been recorded. Thank you for letting us know.'}</p>
+          <div style="background:var(--bg);border-radius:var(--radius);padding:16px;font-size:0.875rem;color:var(--text-muted)">
+            <strong>${escHtml(eventName)}</strong>
+          </div>
+        </div>
+      `;
+    } catch(err){
+      btn.classList.remove('btn-loading'); btn.disabled = false;
+      showToast('Error', 'Failed to submit RSVP. Please try again.', 'error');
+    }
+  }
+
+  loadRSVPPage();
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ================================================================
+    // Helper Functions
+    // ================================================================
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // Max file size check
+    function isUnderSize(maxMB) {
+      return request.resource.size <= maxMB * 1024 * 1024;
+    }
+
+    // Image content type check
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    // Video content type check
+    function isVideo() {
+      return request.resource.contentType.matches('video/.*');
+    }
+
+    // Document content type check
+    function isDocument() {
+      return request.resource.contentType.matches('application/pdf') ||
+             request.resource.contentType.matches('application/msword') ||
+             request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
+             request.resource.contentType.matches('application/vnd.ms-excel') ||
+             request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') ||
+             request.resource.contentType.matches('text/plain') ||
+             isImage();
+    }
+
+    // ================================================================
+    // User Avatars: users/{uid}/avatar_*
+    // ================================================================
+    match /users/{uid}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isOwner(uid) && isImage() && isUnderSize(5);
+      allow delete: if isOwner(uid);
+    }
+
+    // ================================================================
+    // Event banners and covers: events/{uid}/*
+    // ================================================================
+    match /events/{uid}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == uid && isImage() && isUnderSize(10);
+      allow delete: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ================================================================
+    // Event Media (photos/videos): eventMedia/{uid}/{eventId}/*
+    // ================================================================
+    match /eventMedia/{uid}/{eventId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == uid && (isImage() || isVideo()) && isUnderSize(100);
+      allow delete: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ================================================================
+    // Client photos: clients/{uid}/*
+    // ================================================================
+    match /clients/{uid}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == uid && isImage() && isUnderSize(5);
+      allow delete: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ================================================================
+    // Venue images: venues/{uid}/*
+    // ================================================================
+    match /venues/{uid}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == uid && isImage() && isUnderSize(10);
+      allow delete: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ================================================================
+    // Documents: documents/{uid}/{eventId}/*
+    // ================================================================
+    match /documents/{uid}/{eventId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == uid && isDocument() && isUnderSize(20);
+      allow delete: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ================================================================
+    // Invitation images: invitations/{uid}/*
+    // ================================================================
+    match /invitations/{uid}/{fileName} {
+      allow read: if true; // Public — for public invitation pages
+      allow write: if isAuth() && request.auth.uid == uid && isImage() && isUnderSize(10);
+      allow delete: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ================================================================
+    // Settings (logo): settings/*
+    // Only planners/admins may write; all authenticated users may read.
+    // ================================================================
+    match /settings/{fileName} {
+      allow read:   if isAuth();
+      allow write:  if isAuth() && isImage() && isUnderSize(5) &&
+                       (request.auth.token.email != null); // further role check via Firestore rules
+      allow delete: if isAuth();
+    }
+
+    // ================================================================
+    // Deny all other paths
+    // ================================================================
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

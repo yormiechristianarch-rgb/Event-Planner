@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Invitation — MY EVENT PLANNER</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+</head>
+<body style="min-height:100vh;background:linear-gradient(135deg,#1E1E2E 0%,#2A2A3E 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 20px">
+
+  <div id="inv-loader" style="text-align:center;color:#fff;margin-bottom:20px">
+    <div class="spinner" style="margin:0 auto 12px;border-color:rgba(255,255,255,0.3);border-top-color:#fff"></div>
+    <p>Loading invitation…</p>
+  </div>
+
+  <div id="inv-content" style="display:none;width:100%;max-width:520px"></div>
+
+  <div style="text-align:center;margin-top:20px;font-size:0.8rem;color:rgba(255,255,255,0.4)">Powered by MY EVENT PLANNER</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="js/utils.js"></script>
+<script>
+  window.onAuthReady = () => {};
+  const params = new URLSearchParams(location.search);
+  const invId = params.get('id');
+
+  async function loadInvitation() {
+    if (!invId) { showError('No invitation ID provided.'); return; }
+    try {
+      const doc = await db.collection(COLLECTIONS.INVITATIONS).doc(invId).get();
+      if (!doc.exists) { showError('Invitation not found.'); return; }
+      renderInvitation({ id: doc.id, ...doc.data() });
+    } catch(err){ showError(err.message); }
+  }
+
+  function showError(msg) {
+    document.getElementById('inv-loader').style.display = 'none';
+    document.getElementById('inv-content').style.display = 'block';
+    document.getElementById('inv-content').innerHTML = `<div class="invitation-card"><div class="invitation-body"><div style="font-size:2.5rem">😕</div><h3>${escHtml(msg)}</h3></div></div>`;
+  }
+
+  function renderInvitation(inv) {
+    document.getElementById('inv-loader').style.display = 'none';
+    document.title = `You're Invited: ${inv.eventName||'Event'}`;
+    const pc = inv.primaryColor||'#6C63FF';
+    const sc = inv.secondaryColor||'#FF6584';
+    const content = document.getElementById('inv-content');
+    content.style.display = 'block';
+
+    // Theme-specific styles
+    const themeStyles = {
+      Classic: `font-family:'Georgia',serif;`,
+      Modern:  `font-family:'Inter',sans-serif;`,
+      Elegant: `font-family:'Palatino',serif;letter-spacing:0.5px;`,
+      Rustic:  `font-family:'Georgia',serif;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23fafafa'/%3E%3Crect width='1' height='1' fill='%23f0ede8'/%3E%3C/svg%3E")`,
+      Tropical:`font-family:'Inter',sans-serif;`,
+      Minimalist:`font-family:'Inter',sans-serif;letter-spacing:0.3px;`
+    };
+    const tStyle = themeStyles[inv.theme] || '';
+
+    content.innerHTML = `
+      <div class="invitation-card animate-slideUp" style="${tStyle}">
+        ${inv.imageURL ? `<img src="${inv.imageURL}" class="invitation-banner" alt="${escHtml(inv.eventName||'')}"/>` : `<div style="height:200px;background:linear-gradient(135deg,${pc},${sc});display:flex;align-items:center;justify-content:center;font-size:4rem">💌</div>`}
+        <div class="invitation-body" style="background:linear-gradient(180deg,${pc}08,transparent)">
+          <div style="display:inline-block;padding:4px 14px;border-radius:99px;font-size:0.75rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${pc};border:1.5px solid ${pc};margin-bottom:16px">You're Invited</div>
+          <div class="invitation-title" style="color:${pc}">${escHtml(inv.eventName||'')}</div>
+          ${inv.eventDate?`<div class="invitation-meta"><i class="fas fa-calendar" style="color:${pc};margin-right:6px"></i>${formatDate(inv.eventDate,'long')} ${inv.eventTime?'<span style="margin:0 6px">·</span><i class="fas fa-clock" style="color:${pc};margin-right:6px"></i>'+inv.eventTime:''}</div>`:''}
+          ${inv.venue?`<div class="invitation-venue"><i class="fas fa-location-dot" style="color:${pc};margin-right:6px"></i>${escHtml(inv.venue)}</div>`:''}
+          ${inv.description?`<div class="invitation-desc">${escHtml(inv.description)}</div>`:''}
+          ${inv.rsvpDeadline?`<div style="font-size:0.83rem;color:var(--text-muted);margin-bottom:16px"><i class="fas fa-clock" style="color:${pc};margin-right:6px"></i>RSVP by ${formatDate(inv.rsvpDeadline,'short')}</div>`:''}
+          <a href="rsvp-public.html?event=${escHtml(inv.eventId||invId)}" class="btn btn-block btn-lg" style="background:linear-gradient(135deg,${pc},${sc});color:#fff;margin-bottom:16px;box-shadow:0 4px 14px ${pc}44"><i class="fas fa-envelope-open-text"></i> RSVP Now</a>
+          ${inv.contactInfo?`<div style="font-size:0.83rem;color:var(--text-muted)"><i class="fas fa-phone" style="margin-right:6px"></i>${escHtml(inv.contactInfo)}</div>`:''}
+        </div>
+        <div class="invitation-footer">
+          Powered by <strong>MY EVENT PLANNER</strong>
+        </div>
+      </div>
+    `;
+  }
+
+  loadInvitation();
+</script>
+</body>
+</html>
